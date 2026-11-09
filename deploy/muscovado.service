@@ -1,0 +1,25 @@
+[Unit]
+Description=Muscovado (auth + Hermes bridge)
+Documentation=https://github.com/islath/muscovado
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# %h is the systemd user home placeholder; it expands to /home/<your-user>.
+WorkingDirectory=%h/muscovado/server
+ExecStart=/usr/bin/python3 %h/muscovado/server/authd.py
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+# No strict sandbox: this service spawns `hermes chat`, and Hermes needs to
+# read/write ~/.hermes (session DB, cache, logs). Locking that down to
+# read-only breaks chat outright.
+# The security boundary rests on three layers: listen on 127.0.0.1 only,
+# a single nginx entry point, and auth + rate limiting in the service itself.
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

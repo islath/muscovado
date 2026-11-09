@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<!-- Do NOT add <meta name="theme-color">.
+     iOS Safari 26+ ignores it and samples the page color itself to tint the
+     status bar / bottom toolbar; keeping it makes some versions tint twice
+     (theme-color then the sampled color), causing a visible mismatch.
+     Only body's background-color (#070b14, same as the full screen) feeds Safari's sampling. -->
+<meta name="color-scheme" content="dark">
+<!-- Do NOT add apple-mobile-web-app-status-bar-style="black-translucent".
+     Since iOS 26.1 the system overlays the safe area with a dark scrim (not
+     removable from the page) in this mode, so the notch and bottom toolbar end
+     up a different shade than the page. Apple's advice in WebKit bug 317153 is
+     to drop this meta — the status bar then goes opaque and takes the page color. -->
+<meta name="mobile-web-app-capable" content="yes">
+<title>Muscovado</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- Safari edge base: a fixed solid layer covering the notch / bottom-bar sampling zones. -->
+<div class="safari-edge-base" aria-hidden="true"></div>
+
+<div class="app">
+
+  <!-- Ambient background glow: absolute, at the bottom of the content layer and
+       masked to the middle of the page, so it never reaches the notch or bottom
+       toolbar areas and doesn't affect Safari's base-color sampling -->
+  <div class="aurora" aria-hidden="true"></div>
+
+  <!-- Left-edge hot zone: swipe right from the screen edge to reveal the session list -->
+  <div class="edge-swipe" id="edgeSwipe" aria-hidden="true"></div>
+
+  <!-- ══════════ Session list (slides in from the left) ══════════ -->
+  <div class="sessions-backdrop" id="sessionsBackdrop"></div>
+  <aside class="sessions" id="sessions" aria-hidden="true">
+    <div class="sessions-head">
+      <span class="sessions-title">Chats</span>
+    </div>
+
+    <button class="new-chat" id="btnNewChat" type="button">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      <span>New chat</span>
+    </button>
+
+    <div class="sessions-list" id="sessionsList"></div>
+
+    <div class="sessions-foot">
+      <span>Muscovado</span>
+      <button class="logout-btn" id="btnLogout" type="button">Sign out</button>
+    </div>
+  </aside>
+
+  <!-- ══════════ Top status bar ══════════ -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo-orb"></span>
+      <span class="brand-name">Muscovado</span>
+      <span class="brand-state" id="brandState" data-state="good" title="Latency">
+        <span class="bs-dot"></span><span class="bs-text">42 ms</span>
+      </span>
+    </div>
+  </header>
+
+  <!-- ══════════ Pull-up image panel ══════════ -->
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+
+  <!-- Clip layer: its bottom edge sits exactly on the top edge of the composer.
+       The drawer slides inside it, so the revealed part can only grow out of
+       that top edge and never pokes out beside or below the input field. -->
+  <div class="drawer-clip" id="drawerClip">
+  <section class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-grip" id="drawerGrip">
+      <span class="grip-bar"></span>
+    </div>
+
+    <div class="drawer-body">
+
+      <!-- Preview: images returned by Hermes (only one shown for now) -->
+      <div class="preview-stage empty" id="previewStage">
+        <img class="preview-img" id="previewImg" alt="" hidden>
+        <div class="preview-empty" id="previewEmpty">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2.5"/>
+            <circle cx="8.5" cy="9.5" r="1.6"/>
+            <path d="M21 16l-5-5-6 6-2.5-2.5L3 19"/>
+          </svg>
+          <span>No image</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+  </div>
+
+  <!-- ══════════ Conversation area ══════════ -->
+  <main class="feed" id="feed">
+    <div class="feed-date"><span>Today</span></div>
+    <div class="msg-list" id="msgList"></div>
+  </main>
+
+  <!-- ══════════ Bottom composer bar ══════════ -->
+  <div class="voice-hud" id="voiceHud" aria-hidden="true">
+    <div class="vh-wave" id="vhWave"></div>
+    <div class="vh-text" id="vhText">Listening…</div>
+    <div class="vh-hint" id="vhHint">Release to send · swipe up to cancel</div>
+  </div>
+
+  <footer class="composer" id="composer">
+    <div class="composer-gesture" id="composerGesture">
+      <div class="drawer-trigger" id="drawerTrigger" aria-label="Swipe up to open panel">
+        <span class="dt-pill"></span>
+      </div>
+
+      <div class="input-bar" id="inputBar">
+        <div class="field-wrap">
+          <textarea id="field" rows="1" placeholder="Tap to type · hold to speak" enterkeyhint="send"
+                    readonly
+                    autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+          <!-- iOS Safari only: transparent overlay that owns touch, blocking the textarea's native loupe and selection menu -->
+          <div class="field-veil" id="fieldVeil" aria-hidden="true"></div>
+          <div class="field-ph" aria-hidden="true"></div>
+        </div>
+
+        <button class="send-btn" id="sendBtn" aria-label="Send" disabled>
+          <svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+        </button>
+      </div>
+    </div>
+  </footer>
+
+</div>
+
+<script src="markdown.js"></script>
+<script src="app.js"></script>
+<script src="composer.js"></script>
+</body>
+</html>

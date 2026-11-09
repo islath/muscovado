@@ -1,0 +1,1372 @@
+/* ════════════════════════════════════════════════════════════
+   AI console, mobile-first dark tech aesthetic
+   ════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Single base color for the whole screen. Every panel (session list, preview drawer) starts from it,
+     layers are built only by overlaying translucent white, never a second near-navy. */
+  --bg: #070b14;
+  --surface: rgba(255, 255, 255, .045);
+  --surface-2: rgba(255, 255, 255, .075);
+  --line: rgba(255, 255, 255, .085);
+  --line-strong: rgba(255, 255, 255, .16);
+
+  --text: #e8eef8;
+  --text-2: #9aa8bf;
+  --text-3: #64718a;
+
+  --cyan: #38e8d0;
+  --violet: #8b7dff;
+  --amber: #ffb44d;
+  --green: #46e08a;
+  --rose: #ff5f7e;
+
+  --accent: var(--cyan);
+  --r-lg: 22px;
+  --r-md: 16px;
+  --r-sm: 11px;
+
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0; padding: 0;
+  height: 100%;
+  overflow: hidden;
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro SC", "PingFang SC",
+               "Helvetica Neue", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+/* Bottom toolbar tinting (measured on real devices).
+   iOS Safari samples [body's background-color] to tint the bottom address bar / toolbar.
+   So body must be the only layer carrying a background color, and that color must exactly equal what the page shows.
+   Therefore:
+   - body paints solid --bg (the Safari sample source, also the perceived page base)
+   - html stays transparent; there is no second painted layer.
+     When both are painted, iOS compositing produces a 1-2 step difference between the body area and the
+     html-exposed area (measured: page rgb(6,7,14) vs toolbar rgb(8,11,20)); dropping one leaves no room for it.
+
+   Do not use background-attachment: fixed --
+   on iOS it paints against the 'initial viewport', so collapsing/expanding the address bar exposes a differently colored strip at the bottom. */
+html {
+  background-color: transparent;
+  background-image: none;
+  /* html/body both fill the viewport: body is the only painted layer,
+     so it must cover the whole visible area, otherwise the system default white/black shows. */
+  height: 100%;
+  min-height: 100%;
+}
+body {
+  background-color: var(--bg);
+  background-image: none;
+  /* The top safe area is handled by body */
+  padding-top: var(--safe-t);
+  box-sizing: border-box;
+  min-height: 100%;
+}
+
+/* Edge-sampling base for iOS Safari.
+   Safari samples toolbar color from fixed elements / body near the viewport edges.
+   This is the only edge-touching fixed background: pure var(--bg), no gradient, no filter, no transparency,
+   beneath all content, so system areas and uncovered page areas are exactly the same color. */
+.safari-edge-base {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--bg);
+}
+
+/* Main chat background uses the same solid color as the Safari edge layer. */
+.app,
+.feed,
+.composer,
+.input-bar {
+  background-color: transparent;
+  background-image: none;
+}
+
+/* -- Background ambience light -----------------------------------------
+   Real-device constraint: iOS Safari uses body's background-color for the status bar and bottom bar,
+   and samples only [one] value. So the physical edge band of the page (top and bottom) must be uniform,
+   otherwise system areas mismatch part of the page and you see two near-identical dark shades.
+
+   But 'uniform edges' does not mean 'one dead color across the whole page'. Approach:
+   - body paints solid --bg (Safari's only sample source)
+   - ambience light is drawn only on the content layer, inset from the edges and masked to zero at the border,
+     so it [never reaches] the physical edge -- Safari sampling only ever sees --bg
+   - the glow is a large-radius, very low-opacity radial gradient: a little hue warmth, no brightness lift
+
+   It broke before because the glow was drawn on a full-screen fixed inset:0 layer that also covered the bottom,
+   tinting the sample point to rgb(6,7,14); now it is confined to the content area and the bottom 12% is fully zeroed. */
+.aurora {
+  position: absolute;
+  /* Covers only the upper-middle area: from just below the safe-area edge to 78% of page height,
+     leaving the bottom input-bar area untouched so Safari's sample point stays outside the glow. */
+  left: 0; right: 0;
+  top: 0;
+  height: 78%;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background-image:
+    radial-gradient(70% 42% at 24% 24%, rgba(56, 232, 208, .085), transparent 70%),
+    radial-gradient(64% 38% at 90% 50%, rgba(139, 125, 255, .075), transparent 70%),
+    radial-gradient(50% 26% at 50% 70%, rgba(56, 232, 208, .030), transparent 72%);
+  /* Fades to transparent at top and bottom: clears the notch sample zone above and the toolbar sample zone below */
+  -webkit-mask-image: linear-gradient(to bottom,
+    transparent 0%, #000 18%, #000 62%, transparent 100%);
+  mask-image: linear-gradient(to bottom,
+    transparent 0%, #000 18%, #000 62%, transparent 100%);
+}
+
+/* Background must match the edge Safari base; hierarchy comes from cards, bubbles and status dots. */
+.aurora { display: none; }
+
+/* ========== Session list (slides in from the left) ========== */
+/* Note (iOS Safari 26+): Safari scans position:fixed/sticky elements near the viewport edge,
+   reads their background-color and backdrop-filter to tint the bottom address bar,
+   and [ignores opacity:0] -- invisible elements are still sampled.
+   So a fixed element here must not paint a background; the visual layer goes on an absolute child. */
+.sessions-backdrop {
+  position: fixed; inset: 0; z-index: 70;
+  background: transparent;
+  opacity: 0; pointer-events: none;
+  transition: opacity .28s;
+}
+.sessions-backdrop::before {
+  content: ""; position: absolute; inset: 0;
+  display: none;
+  background: rgba(3,6,12,.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+.sessions-backdrop.show::before { display: block; }
+.sessions-backdrop.show { opacity: 1; pointer-events: auto; }
+
+.sessions {
+  position: fixed;
+  top: 0; bottom: 0; left: 0; z-index: 80;
+  width: min(80vw, 320px);
+  display: flex; flex-direction: column;
+  /* Clear the notch at the top, the home indicator at the bottom, and the side notch in landscape */
+  padding: calc(var(--safe-t) + 10px) 0 calc(var(--safe-b) + 12px) var(--safe-l);
+  /* One base color, --bg; hierarchy comes only from translucent white overlays.
+     Earlier this used a separate navy ramp #0e1728 -> #0a101c:
+     #0a101c = rgb(10,16,28) differs from base #070b14 = rgb(7,11,20) by only rgb(3,5,8),
+     i.e. two very close navies to the eye; and being a fixed edge element,
+     Safari sampled it to tint the bottom toolbar, putting the color shift in the address-bar area.
+     Now derived from --bg, so any number of stacked layers stays same-source with the screen. */
+  /* Fixed edge layers must not use gradients; Safari may re-sample them after gesture transforms,
+     and a gradient would make the bottom toolbar color change with the drawer state. */
+  background: var(--bg);
+  /* Touch is allowed on the whole panel (see the JS SCROLLABLE list);
+     the cost is having to disable text selection and the long-press menu yourself, or long-press pops the system menu */
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+  border-right: 1px solid rgba(255,255,255,.08);
+  border-radius: 0 22px 22px 0;
+  box-shadow: 18px 0 56px rgba(0,0,0,.62);
+  transform: translate3d(-100%, 0, 0);
+  transition: transform .32s cubic-bezier(.22,.9,.25,1);
+  will-change: transform;
+  /* Do not use none: none also disables native vertical scrolling for children,
+     and the list stops scrolling once there are many sessions.
+     pan-y lets the browser scroll the list vertically while horizontal gestures still reach the JS drag-to-dismiss. */
+  touch-action: pan-y;
+}
+.sessions.open { transform: translate3d(0, 0, 0); }
+.sessions.dragging { transition: none; }
+
+.sessions-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 16px 12px;
+}
+.sessions-title {
+  font-size: 17px; font-weight: 600; letter-spacing: .2px;
+}
+
+/* New session: primary action, made visually prominent */
+.new-chat {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 12px 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(56,232,208,.28);
+  background: linear-gradient(135deg, rgba(56,232,208,.14), rgba(139,125,255,.14));
+  color: var(--cyan);
+  font-family: inherit; font-size: 14.5px; font-weight: 500;
+  cursor: pointer;
+  transition: transform .16s, background .2s;
+}
+.new-chat:active { transform: scale(.977); }
+.new-chat svg {
+  width: 17px; height: 17px; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round;
+}
+
+.sessions-list {
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; overflow-x: hidden;
+  /* On iOS this child container must own vertical scrolling itself (its parent is pan-y) */
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 8px;
+  scrollbar-width: none;
+  /* List items take no part in text selection, avoiding the long-press system menu */
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+}
+.sessions-list::-webkit-scrollbar { display: none; }
+
+.session-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  padding: 11px 11px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 14px; line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  transition: background .18s, border-color .18s, color .18s;
+}
+.session-item:active { background: rgba(255,255,255,.05); }
+/* Draft item created but not yet messaged: clear feedback that we switched to a new session */
+.session-item.draft .si-text { color: var(--text-2); font-style: italic; }
+.session-item.draft .si-time { color: var(--text-3); }
+.session-item.active {
+  color: var(--text);
+  background: rgba(56,232,208,.09);
+  border-color: rgba(56,232,208,.20);
+}
+.session-item .si-text {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.session-item .si-time {
+  flex: 0 0 auto;
+  font-size: 10.5px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.sessions-empty {
+  padding: 28px 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.sessions-foot {
+  padding: 12px 16px 0;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  font-size: 10.5px;
+  letter-spacing: .8px;
+  color: var(--text-3);
+  opacity: .75;
+  text-transform: uppercase;
+}
+.logout-btn {
+  font: inherit;
+  letter-spacing: .4px;
+  text-transform: none;
+  padding: 5px 10px;
+  border-radius: 8px;
+  color: var(--text-2);
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+.logout-btn:active { background: rgba(255, 95, 126, .16); color: var(--rose); border-color: rgba(255, 95, 126, .4); }
+
+/* Pull-out hit zone on the left edge (swipe in from the screen edge) */
+.edge-swipe {
+  position: fixed;
+  top: 0; bottom: 0; left: 0;
+  width: 22px;
+  z-index: 45;
+  touch-action: none;
+}
+
+/* ========== Layout skeleton ========== */
+.app {
+  position: relative; z-index: 1;
+  /* --app-h is written by JS from visualViewport (the true visible height with the keyboard up),
+     with 100dvh as the fallback until JS runs.
+     Height excludes the top safe area, which body already handles. */
+  height: calc(var(--app-h, 100dvh) - var(--safe-t));
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  transition: height .18s ease-out;
+}
+/* While the keyboard is up: shrink the bottom safe-area padding so the input bar is not pushed too high */
+.app.kb-open {
+  transition: height .18s ease-out;
+}
+/* The keyboard covers the bottom, so safe-area padding is pointless; drop it and keep the input bar closer to the keyboard */
+.app.kb-open .composer {
+  position: relative;
+  /* Side insets: in landscape the notch / rounded corners are on the sides, so the input is not clipped */
+  padding: 0 calc(12px + var(--safe-r)) calc(10px + var(--safe-b)) calc(12px + var(--safe-l));
+  /* Must be fully transparent; no gradient at all.
+     This once used var(--bg) as a 1 -> 0 alpha 'same-color fade', assuming identical values meant no difference,
+     but iOS Safari expands color-mix() into a standalone color(srgb ... / .55) value,
+     so the gradient's middle differed visibly from the base and the bottom color band came back.
+     The page base must be spatially uniform -- Safari samples a single color for the bottom bar. */
+  background: transparent;
+}
+
+
+/* ========== Top ========== */
+.topbar {
+  position: relative;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px 8px;
+  /* In landscape the notch is on the side; top-bar content must clear it */
+  padding-left: calc(16px + var(--safe-l));
+  padding-right: calc(16px + var(--safe-r));
+  min-height: 52px;
+  z-index: 5;
+}
+/* Fades in as the conversation scrolls up, so text does not run into the title bar.
+   Note: this mask must appear only when content has actually scrolled beneath it,
+   otherwise it presses a horizontal dark band under the top bar, making the background look split in two.
+   Hidden by default; JS adds .scrolled to .topbar when it detects .feed scrolling. */
+.topbar::after {
+  content: "";
+  position: absolute; left: 0; right: 0; top: 100%;
+  height: 22px; pointer-events: none;
+  background: linear-gradient(to bottom, rgba(7,11,20,.92), rgba(7,11,20,0));
+  opacity: 0;
+  transition: opacity .2s;
+}
+.topbar.scrolled::after {
+  opacity: 1;
+}
+.brand { display: flex; align-items: center; gap: 9px; }
+.logo-orb {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: conic-gradient(from 210deg, var(--cyan), var(--violet), var(--cyan));
+  box-shadow: 0 0 0 1px rgba(255,255,255,.10), 0 0 16px rgba(56,232,208,.45);
+  animation: orbSpin 9s linear infinite;
+}
+@keyframes orbSpin { to { transform: rotate(360deg); } }
+.brand-name { font-size: 15.5px; font-weight: 600; letter-spacing: .2px; }
+
+/* -- Connection latency indicator: green / yellow / red -- */
+.brand-state {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10.5px; font-weight: 500;
+  padding: 2px 8px 2px 6px; border-radius: 20px;
+  letter-spacing: .2px;
+  font-variant-numeric: tabular-nums;
+  transition: color .3s, background .3s, border-color .3s;
+  cursor: default;
+}
+.brand-state .bs-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+  flex: 0 0 auto;
+  transition: background .3s, box-shadow .3s;
+}
+/* Good: < 120ms */
+.brand-state[data-state="good"] {
+  color: var(--green);
+  background: rgba(70,224,138,.10);
+  border: 1px solid rgba(70,224,138,.24);
+}
+/* Fair: 120-350ms */
+.brand-state[data-state="fair"] {
+  color: var(--amber);
+  background: rgba(255,180,77,.10);
+  border: 1px solid rgba(255,180,77,.24);
+}
+/* Poor / disconnected: > 350ms or request failed */
+.brand-state[data-state="poor"] {
+  color: var(--rose);
+  background: rgba(255,95,126,.10);
+  border: 1px solid rgba(255,95,126,.26);
+}
+/* When disconnected the dot pulses to signal offline */
+.brand-state[data-state="poor"] .bs-dot {
+  animation: pulseDot 1.6s ease-in-out infinite;
+}
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .35; }
+}
+.icon-btn {
+  display: grid; place-items: center;
+  width: 34px; height: 34px; border-radius: 11px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-2);
+  transition: .18s;
+  cursor: pointer;
+}
+.icon-btn:active { transform: scale(.93); background: var(--surface-2); color: var(--text); }
+.icon-btn.small { width: 30px; height: 30px; border-radius: 9px; }
+.icon-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor;
+                stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ========== Conversation area ========== */
+.feed {
+  overflow-y: auto; overflow-x: hidden;
+  /* Do not add -webkit-overflow-scrolling: touch.
+     iOS 13+ has momentum scrolling by default, so it is a legacy hack;
+     it also makes iOS give this element its own compositing layer
+     whose rasterization extends past the container bounds, leaving a band at the bottom
+     painted by the content area that is slightly darker/lighter than body.
+     overscroll-behavior-y: contain already prevents scroll chaining. */
+  overscroll-behavior-y: contain;
+  /* Explicitly transparent: let body's color show through; this area takes no part in painting */
+  background: transparent;
+  padding: 4px 16px 10px;
+  scrollbar-width: none;
+  /* Message area is not selectable: long-press does not raise the selection loupe */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.feed::-webkit-scrollbar { display: none; }
+
+.feed-date { display: flex; justify-content: center; padding: 6px 0 14px; }
+.feed-date span {
+  font-size: 11px; color: var(--text-3); letter-spacing: .4px;
+  padding: 3px 11px; border-radius: 20px;
+  background: rgba(255,255,255,.035);
+  border: 1px solid var(--line);
+}
+
+.msg-list { display: flex; flex-direction: column; gap: 14px; padding-bottom: 8px; }
+
+.msg {
+  display: flex; gap: 9px;
+  animation: msgIn .34s cubic-bezier(.2,.8,.25,1) both;
+}
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(10px) scale(.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* User messages -- right-aligned bubble */
+.msg.user { justify-content: flex-end; }
+.msg.user .bubble {
+  max-width: 82%;
+  padding: 10px 14px;
+  border-radius: 18px 18px 5px 18px;
+  background: linear-gradient(135deg, rgba(56,232,208,.16), rgba(139,125,255,.16));
+  border: 1px solid rgba(56,232,208,.22);
+  font-size: 15px; line-height: 1.55;
+  color: #eaf6f4;
+  word-break: break-word;
+}
+.msg.user .bubble.voice::before {
+  content: ""; display: inline-block;
+  width: 11px; height: 11px; margin-right: 7px;
+  background: currentColor; opacity: .55;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 15.5a3.5 3.5 0 0 0 3.5-3.5V5.5a3.5 3.5 0 1 0-7 0V12a3.5 3.5 0 0 0 3.5 3.5Z'/><path d='M5.5 11.5a6.5 6.5 0 0 0 13 0' fill='none' stroke='black' stroke-width='2'/></svg>") center/contain no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 15.5a3.5 3.5 0 0 0 3.5-3.5V5.5a3.5 3.5 0 1 0-7 0V12a3.5 3.5 0 0 0 3.5 3.5Z'/><path d='M5.5 11.5a6.5 6.5 0 0 0 13 0' fill='none' stroke='black' stroke-width='2'/></svg>") center/contain no-repeat;
+}
+
+/* AI messages -- left-aligned, no bubble, with a vertical accent bar */
+.msg.ai { align-items: flex-start; }
+.avatar {
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 9px;
+  background: conic-gradient(from 160deg, rgba(56,232,208,.22), rgba(139,125,255,.28), rgba(56,232,208,.22));
+  border: 1px solid rgba(255,255,255,.12);
+  display: grid; place-items: center;
+  margin-top: 2px;
+}
+.avatar::after {
+  content: ""; width: 9px; height: 9px; border-radius: 50%;
+  background: linear-gradient(140deg, var(--cyan), var(--violet));
+  box-shadow: 0 0 8px rgba(56,232,208,.75);
+}
+.msg.ai .bubble {
+  max-width: calc(100% - 40px);
+  padding: 2px 2px 0 0;
+  font-size: 15px; line-height: 1.62;
+  color: #dbe4f2;
+  word-break: break-word;
+}
+/* Streaming output contains newlines; they must be kept, or multi-line answers collapse into one paragraph */
+.msg.ai .bubble p { margin: 0 0 8px; white-space: pre-wrap; word-break: break-word; }
+.msg.ai .bubble p:last-child { margin-bottom: 0; }
+.msg.ai .bubble code {
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  font-size: 13px; padding: 1.5px 5px; border-radius: 6px;
+  background: rgba(255,255,255,.07); color: var(--cyan);
+  border: 1px solid var(--line);
+}
+.msg.ai .bubble strong { color: #fff; font-weight: 600; }
+
+/* ========== Markdown typography ==========
+   Answers are mostly markdown: headings, lists, tables, code blocks, bold.
+   All element styles inside .bubble.md live here, overriding the old <p>/<code> rules.
+   Headings start at h2 (h1 is too large on phones and bursts the bubble). */
+.bubble.md { font-size: 15px; line-height: 1.66; color: #dbe4f2; }
+.bubble.md > *:first-child { margin-top: 0; }
+.bubble.md > *:last-child { margin-bottom: 0; }
+
+.bubble.md p { margin: 0 0 9px; white-space: pre-wrap; word-break: break-word; }
+
+.bubble.md h2,
+.bubble.md h3,
+.bubble.md h4,
+.bubble.md h5,
+.bubble.md h6 {
+  margin: 15px 0 7px;
+  color: #fff;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: .2px;
+}
+.bubble.md h2 { font-size: 16.5px; }
+.bubble.md h3 { font-size: 15.5px; }
+.bubble.md h4,
+.bubble.md h5,
+.bubble.md h6 { font-size: 15px; color: #e8eef8; }
+
+.bubble.md ul,
+.bubble.md ol { margin: 0 0 9px; padding-left: 20px; }
+.bubble.md li { margin: 0 0 4px; }
+.bubble.md li:last-child { margin-bottom: 0; }
+.bubble.md ul { list-style: disc; }
+.bubble.md ol { list-style: decimal; }
+.bubble.md li > p { margin: 0; }
+
+.bubble.md blockquote {
+  margin: 0 0 9px;
+  padding: 6px 10px;
+  border-left: 2px solid rgba(56,232,208,.45);
+  border-radius: 0 8px 8px 0;
+  background: rgba(56,232,208,.05);
+  color: var(--text-2);
+}
+.bubble.md blockquote > *:last-child { margin-bottom: 0; }
+
+.bubble.md hr {
+  height: 1px; border: 0; margin: 13px 0;
+  background: var(--line);
+}
+
+.bubble.md a {
+  color: var(--cyan);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(56,232,208,.35);
+}
+.bubble.md strong { color: #fff; font-weight: 600; }
+.bubble.md em { font-style: italic; color: #cdd8e8; }
+.bubble.md del { opacity: .55; }
+
+.bubble.md code {
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  font-size: 12.5px;
+  padding: 1.5px 5px;
+  border-radius: 5px;
+  background: rgba(255,255,255,.07);
+  color: var(--cyan);
+  border: 1px solid var(--line);
+  word-break: break-word;
+}
+
+/* Code block: horizontally scrollable, does not burst the bubble */
+.bubble.md .md-code {
+  position: relative;
+  margin: 0 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(0,0,0,.32);
+  overflow: hidden;
+}
+.bubble.md .md-code pre {
+  margin: 0;
+  padding: 10px 11px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.bubble.md .md-code code {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #cfe3f5;
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre;
+  word-break: normal;
+}
+/* Language label: pinned top-right, very faint, informational only */
+.bubble.md .md-code[data-lang]::after {
+  content: attr(data-lang);
+  position: absolute; top: 6px; right: 9px;
+  font-size: 9.5px; letter-spacing: .4px;
+  color: var(--text-3); opacity: .65;
+  text-transform: lowercase;
+  pointer-events: none;
+}
+
+/* Tables: bubble width is limited, so allow horizontal scrolling */
+.bubble.md .md-table-wrap {
+  margin: 0 0 10px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.bubble.md table {
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 100%;
+}
+.bubble.md th,
+.bubble.md td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.bubble.md th { color: #fff; font-weight: 600; background: rgba(255,255,255,.04); }
+.bubble.md tr:last-child td { border-bottom: 0; }
+
+/* Note line appended inside the bubble when the stream is interrupted or errors */
+.bubble.md .stream-cut {
+  margin-top: 8px;
+  padding: 5px 9px;
+  border-radius: 7px;
+  border: 1px solid rgba(255,180,77,.28);
+  background: rgba(255,180,77,.07);
+  color: var(--amber);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Inline card, showing that the middle area can carry rich interactive info */
+.inline-card {
+  margin-top: 10px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  overflow: hidden;
+  /* The bubble shrink-wraps: with very short text the card collapses into a strip and key-value pairs mush together.
+     Give the card a minimum width; the bubble widens to fit (still bounded by .bubble max-width). */
+  min-width: min(262px, 68vw);
+}
+.inline-card .ic-head {
+  padding: 11px 13px 9px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--text-2);
+  border-bottom: 1px solid var(--line);
+}
+.inline-card .ic-head .dot { width: 6px; height: 6px; border-radius: 50%; }
+.inline-card .ic-body { padding: 12px 13px; }
+.ic-kv { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; }
+.ic-kv .k { color: var(--text-3); }
+.ic-kv .v { color: var(--text); font-variant-numeric: tabular-nums; }
+.ic-mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 12px; color: var(--text-2); }
+
+/* Typing indicator */
+.typing { display: inline-flex; gap: 4px; align-items: center; padding: 6px 0; }
+.typing-note {
+  margin-left: 9px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  letter-spacing: .2px;
+  vertical-align: 2px;
+}
+.typing-note b {
+  font-weight: 600;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.typing i {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--text-3);
+  animation: blink 1.25s infinite ease-in-out;
+}
+.typing i:nth-child(2) { animation-delay: .16s; }
+.typing i:nth-child(3) { animation-delay: .32s; }
+@keyframes blink {
+  0%, 70%, 100% { opacity: .28; transform: translateY(0); }
+  35% { opacity: 1; transform: translateY(-2.5px); }
+}
+
+/* ========== Thinking process (a slim strip that does not steal the layout) ==========
+   Hermes may be calling several tools before it emits its first character; previously only a spinner showed.
+   This is a 28px-tall strip: status dot + current activity + elapsed time + expand chevron.
+   It collapses when the answer starts, leaving 'Thought N.Ns', tappable to expand the steps. */
+.thinking {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+/* The root node is div.msg.ai.thinking (horizontal flex); avatar and thinking strip are its two children.
+   The avatar moves into the first row and the thinking strip takes the remaining width. */
+.thinking > .avatar { order: 0; }
+.thinking > .think-bar { order: 1; flex: 1 1 auto; min-width: 0; }
+.thinking > .think-steps { order: 2; }
+/* Strip and avatar share one row, so wrapping the first two children in a layer is awkward;
+   use flex-wrap directly: avatar and strip stay on one row, steps wrap to fill the line. */
+.thinking { flex-wrap: wrap; }
+.thinking > .think-steps { flex: 0 0 100%; margin-left: 0; padding-left: 10px; }
+.think-bar {
+  display: flex; align-items: center; gap: 8px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 9px;
+  background: rgba(255,255,255,.028);
+  border: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--text-3);
+  letter-spacing: .2px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background .2s, border-color .2s;
+}
+.think-bar:active { background: rgba(255,255,255,.05); }
+.think-dots { display: inline-flex; gap: 3px; align-items: center; }
+.think-dots i {
+  width: 3.5px; height: 3.5px; border-radius: 50%;
+  background: var(--cyan); opacity: .35;
+  animation: thinkPulse 1.1s infinite ease-in-out;
+}
+.think-dots i:nth-child(2) { animation-delay: .14s; }
+.think-dots i:nth-child(3) { animation-delay: .28s; }
+@keyframes thinkPulse {
+  0%, 70%, 100% { opacity: .25; }
+  35% { opacity: 1; }
+}
+.think-text {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text-2);
+}
+.think-secs {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  opacity: .8;
+}
+.think-caret {
+  flex: 0 0 auto;
+  font-size: 9px; opacity: 0;
+  transition: opacity .2s, transform .2s;
+}
+.thinking.done .think-caret { opacity: .55; }
+.thinking.done .think-dots { display: none; }
+.thinking.done .think-bar { background: transparent; border-color: transparent; height: 24px; padding: 0 2px; }
+
+.think-steps {
+  display: none;
+  flex-direction: column; gap: 3px;
+  padding: 6px 0 2px 10px;
+  border-left: 1px solid rgba(255,255,255,.08);
+  margin: 4px 0 2px 9px;
+}
+.thinking.open .think-steps { display: flex; }
+.thinking.open .think-caret { transform: rotate(180deg); }
+.think-step {
+  display: flex; align-items: baseline; gap: 6px;
+  font-size: 11px; color: var(--text-3);
+  line-height: 15px;
+}
+.ts-icon {
+  flex: 0 0 auto; width: 4px; height: 4px; border-radius: 50%;
+  background: var(--amber); opacity: .8;
+  transform: translateY(-2px);
+}
+.think-step.ok .ts-icon { background: var(--green); }
+.ts-name { flex: 0 0 auto; color: var(--text-2); }
+.ts-detail {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  opacity: .75;
+}
+
+.dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.dot.green { background: var(--green); box-shadow: 0 0 7px rgba(70,224,138,.7); }
+.dot.cyan { background: var(--cyan); box-shadow: 0 0 7px rgba(56,232,208,.7); }
+.dot.violet { background: var(--violet); box-shadow: 0 0 7px rgba(139,125,255,.7); }
+.dot.amber { background: var(--amber); box-shadow: 0 0 7px rgba(255,180,77,.7); }
+
+/* ========== Bottom input bar ========== */
+.composer {
+  position: relative;
+  /* Side insets: in landscape the notch / rounded corners are on the sides, so the input is not clipped */
+  padding: 0 calc(12px + var(--safe-r)) calc(10px + var(--safe-b)) calc(12px + var(--safe-l));
+  /* Must be fully transparent; no gradient at all.
+     This once used var(--bg) as a 1 -> 0 alpha 'same-color fade', assuming identical values meant no difference,
+     but iOS Safari expands color-mix() into a standalone color(srgb ... / .55) value,
+     so the gradient's middle differed visibly from the base and the bottom color band came back.
+     The page base must be spatially uniform -- Safari samples a single color for the bottom bar. */
+  background: transparent;
+}
+
+/* Pull handle */
+.drawer-trigger {
+  display: flex; justify-content: center; align-items: center;
+  padding: 2px 0 9px;
+  cursor: grab; touch-action: none;
+}
+.dt-pill {
+  width: 40px; height: 4px; border-radius: 4px;
+  background: rgba(255,255,255,.20);
+  transition: .22s;
+}
+.drawer-trigger:active .dt-pill { background: var(--cyan); width: 52px; box-shadow: 0 0 12px rgba(56,232,208,.6); }
+/* Handle stays lit when there are new images, hinting "swipe up to view" */
+.drawer-trigger.has-image .dt-pill {
+  background: var(--cyan);
+  width: 46px;
+  box-shadow: 0 0 14px rgba(56,232,208,.75);
+  animation: pillPulse 2.2s ease-in-out infinite;
+}
+@keyframes pillPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .5; }
+}
+
+.input-bar {
+  /* gap set to zero: with a gap, the input loses 8px when the send button collapses and the placeholder shifts left.
+     The spacing comes from .has-text .send-btn margin-left instead. */
+  display: flex; align-items: flex-end; gap: 0;
+  padding: 6px 6px 6px 6px;
+  border-radius: 26px;
+  /* Fully transparent: no background or shadow at all.
+     It used to paint var(--bg), same as body, supposedly invisible,
+     but whenever this band is not strictly pure --bg (residual alpha from the aurora gradient),
+     the solid fill reads slightly darker than its surroundings -- a faint dark rectangle.
+     Now only a 1px border outlines it, so pixels inside and outside are identical. */
+  background: transparent;
+  border: 1px solid var(--line);
+  box-shadow: none;
+  /* A shadow is only needed while the keyboard is up (to lift the bar off the content).
+     At rest, this 32px downward shadow lands on the solid area below
+     and presses a slightly darker band between the input bar bottom and the screen edge --
+     exactly the source of the 'two close colors at the bottom'. */
+  transition: border-color .22s, box-shadow .22s, background .22s, padding-left .2s;
+}
+/* Unfocused (at rest): no shadow; the bottom stays the same solid color as the rest of the screen */
+.input-bar:not(.focused):not(.recording) {
+  /* Top highlight removed too: it presses a brighter narrow band inside the field, another way the rectangle shows */
+  box-shadow: none;
+}
+/* When the send button appears it takes right-hand space (38px + 8px gap), shifting the center point left.
+   Add equal whitespace on the left so the text stays horizontally centered in the whole input bar. */
+.input-bar.has-text {
+  padding-left: 52px;   /* 6 base + 38 button + 8 gap */
+}
+.input-bar.focused {
+  border-color: rgba(56,232,208,.38);
+  /* Only a faint cyan ring; no black outer shadow --
+     that black halo presses a slightly darker rectangle around the input field. */
+  box-shadow: 0 0 0 3px rgba(56,232,208,.09);
+}
+
+.send-btn {
+  flex: 0 0 auto;
+  width: 38px; height: 38px; border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text-2);
+  display: grid; place-items: center;
+  cursor: pointer;
+  transition: transform .16s, background .2s, color .2s, border-color .2s;
+  touch-action: none;
+  position: relative;
+}
+.send-btn svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round;
+  position: absolute; transition: opacity .16s, transform .2s;
+}
+.send-btn:active { transform: scale(.92); }
+
+.send-btn {
+  background: rgba(56,232,208,.13);
+  border-color: rgba(56,232,208,.26);
+  color: var(--cyan);
+  /* The collapsed state must truly be 0 wide: with width:0 alone, padding (1px 6px) and border (1px)
+     still add up to 14px, plus the flex gap 8px -- the input loses its right side and the placeholder
+     shifts left overall (measured 7px). Zero out padding/border/margin together. */
+  opacity: 0; transform: scale(.7); width: 0; padding: 0; border-width: 0;
+  margin: 0; pointer-events: none;
+}
+.input-bar.has-text .send-btn {
+  opacity: 1; transform: scale(1); width: 38px; padding: 1px 6px; border-width: 1px;
+  margin-left: 8px; pointer-events: auto;
+}
+
+.field-wrap {
+  flex: 1 1 auto; position: relative; min-width: 0;
+  /* Whole input area: no selection / loupe / system long-press menu; long-press is reserved for voice */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+}
+
+/* -- iOS Safari: a transparent overlay takes over touch --
+   iOS raises the loupe and selection menu from the textarea's own native behavior;
+   user-select / touch-callout cannot stop it (Safari ignores them).
+   The only reliable way is a div layer on top receiving touch:
+   the textarea never sees touch events, so no loupe.
+   The overlay steps aside when typing is needed (.typing state). */
+.field-veil {
+  position: absolute;
+  inset: -4px -2px;
+  z-index: 2;
+  border-radius: 14px;
+  /* Key: clear iOS's default 'interactive element' behavior */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+  cursor: text;
+}
+/* While typing (focused): the overlay stops intercepting touch but stays mounted,
+   so another long-press does not raise the loupe again (here long-press reaching the textarea for word selection is useful) */
+.input-bar.focused .field-veil,
+.input-bar.has-text .field-veil {
+  pointer-events: none;
+}
+
+#field {
+  display: block; width: 100%;
+  border: 0; outline: 0; resize: none;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15.5px; line-height: 22px;
+  padding: 8px 0;
+  max-height: 110px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  /* Center horizontally: both placeholder and typed text are centered */
+  text-align: center;
+  /* Disable the iOS text loupe, long-press word selection and auto zoom */
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  caret-color: var(--cyan);
+  /* When unfocused, keep it fully out of pointer handling; the overlay decides */
+  position: relative;
+  z-index: 1;
+}
+#field::-webkit-scrollbar { display: none; }
+#field::placeholder { color: var(--text-3); }
+#field:focus {
+  /* Prevent iOS zooming the page on focus (must be >= 16px) */
+  font-size: 16px;
+  z-index: 3;
+}
+  /* readonly state: iOS does no text interaction and the caret must not blink */
+#field[readonly] {
+  caret-color: transparent;
+}
+#field[readonly]:focus {
+  font-size: 15.5px;
+}
+
+/* Visual feedback on the input while holding to talk */
+.input-bar.recording {
+  border-color: rgba(255,95,126,.42);
+  box-shadow: 0 0 0 3px rgba(255,95,126,.10);
+}
+
+/* -- While recording: remove the textarea from hit testing entirely --
+   If a touchend lands on a focusable textarea, iOS raises the keyboard on its own.
+   That is system behavior JS cannot block (preventDefault is useless, it happens after touchend).
+   The only reliable way is to keep the textarea out of hit testing while recording. */
+.input-bar.recording #field {
+  pointer-events: none;
+  /* Also make it unfocusable, as a second safeguard */
+  -webkit-user-modify: read-only;
+}
+/* While recording the overlay owns everything and must accept pointer events */
+.input-bar.recording .field-veil {
+  pointer-events: auto !important;
+}
+
+  /* Short window after release: the textarea is still out of hit testing,
+     so iOS cannot treat the touchend point as 'tapping the input field' and raise the keyboard */
+.input-bar.suppress-touch #field {
+  pointer-events: none;
+}
+
+/* ========== Voice HUD ========== */
+.voice-hud {
+  position: fixed; left: 50%; bottom: calc(84px + var(--safe-b));
+  transform: translate(-50%, 14px) scale(.94);
+  z-index: 40;
+  width: min(340px, calc(100vw - 40px));
+  padding: 13px 18px 14px;
+  border-radius: 20px;
+  /* Itself transparent; background goes on ::before. voiceHud is fixed; though it sits far from the
+     bottom edge, Safari scans fixed elements near viewport edges to tint the toolbar -- handle it uniformly. */
+  background: transparent;
+  border: 1px solid rgba(56,232,208,.26);
+  box-shadow: 0 16px 48px rgba(0,0,0,.62), 0 0 0 1px rgba(255,255,255,.04);
+  opacity: 0; pointer-events: none;
+  transition: opacity .2s, transform .26s cubic-bezier(.2,.8,.25,1), border-color .2s;
+  text-align: center;
+}
+.voice-hud::before {
+  content: ""; position: absolute; inset: 0; z-index: 0;
+  background: rgba(12,18,32,.90);
+  backdrop-filter: blur(26px) saturate(160%);
+  -webkit-backdrop-filter: blur(26px) saturate(160%);
+  border-radius: inherit;
+  pointer-events: none;
+}
+.voice-hud > * { position: relative; z-index: 1; }
+.voice-hud.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+.voice-hud.cancel {
+  border-color: rgba(255,95,126,.5);
+  background: rgba(32,12,20,.92);
+}
+
+.vh-wave {
+  display: flex; align-items: center; justify-content: center; gap: 3px;
+  height: 26px; margin-bottom: 9px;
+}
+.vh-wave i {
+  width: 3px; border-radius: 3px;
+  background: linear-gradient(180deg, var(--cyan), var(--violet));
+  height: 6px;
+  transition: height .07s linear;
+}
+.voice-hud.cancel .vh-wave i { background: rgba(255,95,126,.65); }
+
+.vh-text {
+  font-size: 14px; line-height: 1.5; color: var(--text);
+  min-height: 21px; word-break: break-word;
+}
+.vh-text .placeholder { color: var(--text-3); }
+.vh-hint {
+  margin-top: 7px; font-size: 11px; color: var(--text-3); letter-spacing: .3px;
+  transition: color .2s;
+}
+.voice-hud.cancel .vh-hint { color: var(--rose); }
+
+/* ========== Pull-down panel ========== */
+/* As above: the fixed parent itself must be transparent, with the visual layer on an absolute child,
+   otherwise Safari samples rgba(3,6,12,.55) to tint the bottom address bar. */
+.drawer-backdrop {
+  position: fixed; inset: 0; z-index: 50;
+  background: transparent;
+  opacity: 0; pointer-events: none;
+  transition: opacity .3s;
+}
+.drawer-backdrop::before {
+  content: ""; position: absolute; inset: 0;
+  display: none;
+  background: rgba(3,6,12,.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+.drawer-backdrop.show::before { display: block; }
+.drawer-backdrop.show { opacity: 1; pointer-events: auto; }
+
+.drawer-clip {
+  /* The bottom edge sits exactly on the input area's top, so the drawer slides within it and anything exposed can only
+     'grow' from that edge -- no bleed past the input's sides, below it, or into the safe area.
+     This lets the closed drawer hide entirely outside the clip, without adding the input height to the transform
+     offset (the first portion of that motion would be invisible, looking like it pops out of the screen bottom). */
+  position: fixed; left: 0; right: 0; top: 0;
+  bottom: var(--composer-h, 84px);
+  overflow: hidden;
+  z-index: 60;
+  pointer-events: none;      /* closed: must not block the page */
+}
+.drawer-clip.open { pointer-events: auto; }
+
+.drawer {
+  position: absolute;
+  left: 0; right: 0;
+  bottom: 0;
+  z-index: 60;
+  /* The clip layer defaults to pointer-events:none (otherwise it swallows touches across the whole page).
+     Declared auto here: when closed it is clipped by overflow:hidden and sits outside the visible area,
+     so hit testing never lands on it. */
+  pointer-events: auto;
+  /* Height is content-driven: the empty state is as tall as a 16:9 card, with images it hugs the image.
+     No longer a fixed 620px -- that always wrapped the card in a tall empty frame.
+     max-height catches portrait images / very long content, growing at most to the input area's top. */
+  height: auto;
+  max-height: 100%;
+  display: flex; flex-direction: column;
+  /* Keep itself transparent; background goes on ::before (absolute).
+     .drawer is fixed and bottom-anchored, so Safari would sample its background to tint the bottom address bar,
+     producing a second navy next to the page base. */
+  background: transparent;
+  border-radius: 20px;         /* equal corners, no longer 20 top / 14 bottom */
+  border: 1px solid rgba(255,255,255,.09);
+  box-shadow: 0 -14px 48px rgba(0,0,0,.58);
+  /* Use translate3d to stay on the GPU and avoid relayout during drag */
+  transform: translate3d(0, 100%, 0);
+  transition: transform .34s cubic-bezier(.22,.9,.25,1);
+  will-change: transform;
+  touch-action: none;
+  overflow: hidden;
+}
+.drawer::before {
+  content: ""; position: absolute; inset: 0; z-index: 0;
+  /* Also derived from --bg.
+     This used to be a #0e1728 -> #0a101c gradient, and .drawer is a bottom-anchored fixed element,
+     so Safari sampled #0a101c, only rgb(3,5,8) away from the page base, giving a second navy at the bottom.
+     Now it is same-source as the screen, so whichever layer is sampled is the same base color. */
+  /* A bottom-anchored fixed layer must be a solid color: Safari re-samples it after slide gestures,
+     and the preview drawer's gradient must not change the bottom toolbar color. */
+  background: var(--bg);
+  border-radius: inherit;
+  pointer-events: none;
+}
+.drawer > * { position: relative; z-index: 1; }
+.drawer.open { transform: translate3d(0, 0, 0); }
+.drawer.dragging { transition: none; }
+
+.drawer-grip { display: flex; justify-content: center; padding: 9px 0 3px; cursor: grab; }
+.grip-bar { width: 40px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.22); }
+
+.drawer-body { flex: 1 1 auto; overflow-y: auto; padding: 12px; scrollbar-width: none;
+               display: flex; flex-direction: column; min-height: 0; }
+
+/* Preview is the drawer's only content; it fills the remaining height directly */
+.drawer-body > .preview-stage {
+  /* No stretch: the stage shrinks to the image's actual size, then centers as a whole */
+  flex: 0 1 auto;
+  align-self: center;
+  margin: auto 0;
+}
+
+.drawer-body::-webkit-scrollbar { display: none; }
+
+.panel { display: none; }
+.panel.active { display: block; animation: panelIn .26s ease both; }
+/* The preview panel fills the drawer's usable height so the image can center and fill it */
+.panel.active#panel-preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+@keyframes panelIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* Metric card */
+.metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+.metric {
+  position: relative; overflow: hidden;
+  padding: 11px 11px 6px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.metric-label { font-size: 10.5px; color: var(--text-3); letter-spacing: .2px; }
+.metric-value {
+  font-size: 20px; font-weight: 600; margin-top: 5px;
+  font-variant-numeric: tabular-nums; letter-spacing: -.4px;
+}
+.metric-value .unit { font-size: 11px; font-weight: 500; color: var(--text-3); margin-left: 1px; }
+.metric-delta { font-size: 10px; margin-top: 2px; letter-spacing: .2px; }
+.metric-delta.up { color: var(--green); }
+.metric-delta.down { color: var(--cyan); }
+.spark { width: 100%; height: 24px; margin-top: 2px; display: block; }
+.spark polyline { fill: none; stroke: rgba(56,232,208,.85); stroke-width: 1.6;
+                  stroke-linecap: round; stroke-linejoin: round; }
+
+/* Ring */
+.ring-row { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 9px; }
+.ring-card {
+  display: flex; align-items: center; gap: 11px;
+  padding: 11px 13px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--line);
+}
+.ring { width: 54px; height: 54px; flex: 0 0 auto; transform: rotate(-90deg); }
+.ring-track { fill: none; stroke: rgba(255,255,255,.075); stroke-width: 7; }
+.ring-fill {
+  fill: none; stroke: var(--cyan); stroke-width: 7; stroke-linecap: round;
+  transition: stroke-dashoffset .5s ease;
+  filter: drop-shadow(0 0 4px rgba(56,232,208,.55));
+}
+.ring-fill.violet { stroke: var(--violet); filter: drop-shadow(0 0 4px rgba(139,125,255,.55)); }
+.ring-name { font-size: 11px; color: var(--text-3); }
+.ring-val { font-size: 17px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+/* List card */
+.list-card { margin-top: 9px; padding: 13px 14px 8px; border-radius: var(--r-md);
+             background: var(--surface); border: 1px solid var(--line); }
+.card-title { font-size: 12px; color: var(--text-2); font-weight: 500; letter-spacing: .2px; }
+.task-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 10px 0; font-size: 13.5px;
+  border-bottom: 1px solid rgba(255,255,255,.045);
+}
+.task-row:last-child { border-bottom: 0; }
+.task-name { flex: 1 1 auto; color: var(--text); }
+.task-tag { font-size: 10.5px; color: var(--text-3); padding: 2px 8px; border-radius: 20px;
+            background: rgba(255,255,255,.045); border: 1px solid var(--line); }
+
+/* Line chart */
+.chart-card { padding: 14px 14px 10px; border-radius: var(--r-md);
+              background: var(--surface); border: 1px solid var(--line); }
+.chart-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px; }
+.chart-sub { font-size: 10.5px; color: var(--text-3); margin-top: 3px; }
+.legend { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--text-3); }
+.lg { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
+.lg.cyan { background: var(--cyan); }
+.lg.violet { background: var(--violet); margin-left: 7px; }
+.area-chart { width: 100%; height: 118px; display: block; overflow: visible; }
+.chart-axis { display: flex; justify-content: space-between; margin-top: 5px;
+              font-size: 9.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* Bars */
+.bar-card { margin-top: 9px; padding: 14px; border-radius: var(--r-md);
+            background: var(--surface); border: 1px solid var(--line); }
+.bar-line { display: flex; align-items: center; gap: 10px; margin-top: 11px; font-size: 12.5px; }
+.bar-name { width: 34px; flex: 0 0 auto; color: var(--text-2); }
+.bar-track { flex: 1 1 auto; height: 8px; border-radius: 8px; background: rgba(255,255,255,.055); overflow: hidden; }
+.bar-fill {
+  display: block; height: 100%; width: var(--w);
+  border-radius: 8px; background: linear-gradient(90deg, rgba(56,232,208,.55), var(--cyan));
+  transform-origin: left center;
+  animation: barGrow .82s cubic-bezier(.2,.8,.25,1) backwards;
+  animation-delay: calc(var(--i, 0) * 90ms);
+}
+.bar-fill.violet { background: linear-gradient(90deg, rgba(139,125,255,.5), var(--violet)); }
+.bar-fill.amber  { background: linear-gradient(90deg, rgba(255,180,77,.5), var(--amber)); }
+.bar-fill.green  { background: linear-gradient(90deg, rgba(70,224,138,.5), var(--green)); }
+@keyframes barGrow {
+  from { transform: scaleX(0); opacity: .4; }
+  to   { transform: scaleX(1); opacity: 1; }
+}
+.bar-num { width: 24px; text-align: right; color: var(--text-3); font-variant-numeric: tabular-nums; font-size: 11.5px; }
+
+/* Canvas */
+.canvas-card { position: relative; border-radius: var(--r-md); overflow: hidden;
+               background: var(--surface); border: 1px solid var(--line); }
+#vizCanvas { display: block; width: 100%; height: 210px; }
+.canvas-hint { position: absolute; left: 0; right: 0; bottom: 9px; text-align: center;
+               font-size: 10.5px; color: var(--text-3); letter-spacing: .3px; }
+
+/* ========== Image preview ========== */
+.preview-stage {
+  /* With an image: the frame shrink-wraps the image itself, image edge = frame edge,
+     so there is no 'empty frame around the image' padding.
+     The empty state is overridden by .empty into a 16:9 card. */
+  position: relative;
+  width: auto;
+  max-width: 100%;
+  max-height: 100%;
+  min-height: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 14px;            /* equal corners */
+  background:
+    linear-gradient(140deg, rgba(56,232,208,.045), rgba(139,125,255,.045)),
+    rgba(255,255,255,.022);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  padding: 0;
+  line-height: 0;
+}
+.preview-img {
+  /* Constrain with max-* instead of width/height:100%:
+     percentage heights on replaced elements do not reliably resolve in grid,
+     and in testing this scaled the image up past the container (835px rendered inside a 472px container).
+     max-* + auto keeps the image fully inside the frame at any aspect ratio, undistorted. */
+  max-width: 100%;
+  /* 1:1 bounding box: side length = screen width minus equal left/right padding,
+     so portrait images do not burst the screen and landscape ones stay within that height. */
+  /* Take the smaller of two caps:
+     1) the 1:1 bounding box (screen width minus equal side padding)
+     2) the drawer's usable height (viewport - input area - handle and padding) */
+  max-height: min(calc(100vw - 26px), calc(100dvh - var(--composer-h, 84px) - 56px));
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+  opacity: 0;
+  transform: scale(.985);
+  transition: opacity .26s ease, transform .26s ease;
+}
+.preview-img.loaded { opacity: 1; transform: none; }
+
+.drawer-body > .preview-stage.empty {
+  /* Empty state: a 16:9 card, full width, equal rounded corners, vertically centered */
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: auto;
+  aspect-ratio: 16 / 9;
+  height: auto;
+  min-height: 0;
+  margin: auto 0;
+}
+
+.preview-empty {
+  /* Only centers the icon and text in the card; border/background are drawn by the stage itself */
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 9px;
+  color: var(--text-3);
+  font-size: 12px;
+  letter-spacing: .3px;
+}
+.preview-empty svg {
+  width: 34px; height: 34px;
+  fill: none; stroke: currentColor;
+  stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round;
+  opacity: .5;
+}
+
+/* Thumbnail strip */
+.preview-strip {
+  display: flex; gap: 7px;
+  margin-top: 9px;
+  overflow-x: auto; overflow-y: hidden;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.preview-strip:empty { display: none; }
+.preview-strip::-webkit-scrollbar { display: none; }
+
+.pv-thumb {
+  flex: 0 0 auto;
+  width: 52px; height: 52px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,.04);
+  cursor: pointer;
+  transition: border-color .18s, transform .16s;
+  padding: 0;
+}
+.pv-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pv-thumb:active { transform: scale(.94); }
+.pv-thumb.active {
+  border-color: rgba(56,232,208,.55);
+  box-shadow: 0 0 0 2px rgba(56,232,208,.16);
+}
+
+/* Collapsed: hide the handle animation while the input is focused */
+@media (max-height: 620px) {
+  .drawer { height: 88vh; }
+}

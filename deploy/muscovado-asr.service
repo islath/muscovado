@@ -1,0 +1,22 @@
+[Unit]
+Description=Muscovado ASR (sherpa-onnx Paraformer, local only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/muscovado/server
+# Must use the venv that has sherpa_onnx installed -- do not point this at system python.
+ExecStart=%h/asr/.venv/bin/python %h/muscovado/server/asr_api.py
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+Environment=ASR_API_PORT=9131
+Environment=PARA_MODELS=%h/asr/models
+Environment=PARA_DIR=sherpa-onnx-paraformer-zh-small-2024-03-09
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

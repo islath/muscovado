@@ -1,0 +1,10 @@
+# Auth state: password hash, session table, brute-force records. Never commit.
+server/state/
+
+# Local config (domain, paths). Must not be published with the repo.
+server/config.json
+
+__pycache__/
+*.py[cod]
+.DS_Store
+*.log
